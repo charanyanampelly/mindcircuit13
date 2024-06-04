@@ -1,35 +1,84 @@
 pipeline {
     agent any
-	
 	tools {
-    jdk 'JAVA1.8'
-
-  }
+		maven 'maven3'
+		}
 
     stages {
-        stage('CLONE SCM') {
+        stage('checkout') {
             steps {
-                echo 'cloning code from Github'
-				git branch: 'main', url: 'https://github.com/devopstraininghub/webapp1.git'
+                echo 'clone the code'
+				git branch: 'main', url: 'https://github.com/charanyanampelly/mindcircuit13.git'
             }
+		 
         }
-		
-
-		
-			
+		stage('SonarQube Scan') {
+			steps {
+			echo 'Scanning project'
+			// List directory contents for debugging purposes
+			sh 'ls -ltr'
+			// Run SonarQube scan with specified SonarQube server and login token
+			sh ''' mvn sonar:sonar \\
+			-Dsonar.host.url=http://54.237.28.85:9000 \\
+			-Dsonar.login=squ_1f6ff87b241216bec53c179004ba363324eed23e'''
+			}
+		}
 		stage('Build Artifact') {
-            steps {
-                echo 'Build Artifact with maven build tool'
-				sh 'mvn clean sonar:sonar deploy'
-            }
-        }
+			steps {
+			echo 'Build Artifact'
+			// Clean and package the project using Maven
+			sh 'mvn clean package'
+			}
+		}
+		stage('Build Docker Image') {
+			steps {
+			echo 'Build Docker Image'
+			// Build the Docker image using the Dockerfile in the project
+			// Tag the image with the current build number
+				sh 'docker build -t charanya3007/batch13:${BUILD_NUMBER} .'
+			}
+		}
+		stage('Push to Docker Hub') {
+			steps {
+				script {
+				// Use Dockerhub credentials to access Docker Hub
+				withCredentials([string(credentialsId: 'dockerhub', variable: 'dockerhub')]) {
+				sh 'docker login -u charanya3007 -p ${dockerhub}'
+				
+
+				}
+			// Push the Docker image to Docker Hub
+			sh 'docker push charanya3007/batch13:${BUILD_NUMBER}'
+			echo 'Pushed to Docker Hub'
+				}
+			}
+		}
+		stage('Update Deployment File') {
+			environment {
+			GIT_REPO_NAME = "mindcircuit13"
+			GIT_USER_NAME = "charanyanampelly"
+			}
+			steps {
+			echo 'Update Deployment File'
+			// Use Githubtoken to access GitHub
+			withCredentials([string(credentialsId: 'githubtocken', variable: 'githubtoken')]) {
+				sh '''
+				// Configure git user
+				git config user.email "charanyachitti@gmail.com"
+				git config user.name "charanya"}
+			// Replace the tag in the deployment YAML file with the current buildnumber
+			sed -i "s/batch13:.*/batch13:${BUILD_NUMBER}/g"
+			deploymentfiles/deployment.yml
+			// Stage all changes
+			git add .
+			// Commit changes with a message containing the build number
+			git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+			// Push changes to the main branch of the GitHub repository
+			git push https://${githubtoken}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME}
+			HEAD:main
+			'''
+			}
+		}
 		
-		
-		stage('Deploy') {
-            steps {
-                echo 'Deploy to tomcat ap/n server '
-				deploy adapters: [tomcat9(credentialsId: 'tomcat', path: '', url: 'http://34.224.5.225:8081/')], contextPath: 'b12book', war: '**/*.war'
-            }
-        }
     }
 }
